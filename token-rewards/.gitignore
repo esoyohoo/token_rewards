@@ -1,0 +1,68 @@
+# Xcode
+DerivedData/
+build/
+*.xccheckout
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+*.pbxuser
+*.mode1v3
+*.mode2v3
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# CocoaPods
+Pods/
+*.podspec.json
+
+# Carthage
+Carthage/Build/
+Carthage/Checkouts/
+
+# Accio dependency manager
+Dependencies/
+.accio/
+
+# Fastlane
+fastlane/report.xml
+fastlane/test_output
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output/*
+
+# Tuist
+Tuist/Dependencies/*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# SwiftLint / SwiftFormat caches
+.swiftlint.yml
+.swiftformat
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# User-specific
+*.swp
+*.swo
+*.orig
+*~
+
+# Archives
+*.xcarchive
+
+# Simulator logs and device data (not usually in repo, but just in case)
+*.log
