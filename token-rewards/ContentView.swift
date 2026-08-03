@@ -14,7 +14,6 @@ import UniformTypeIdentifiers
 enum CalendarScope: String, CaseIterable, Identifiable {
     case week = "Week"
     case month = "Month"
-    case year = "Year"
     var id: String { rawValue }
 }
 
@@ -43,7 +42,7 @@ enum Mood: String, CaseIterable, Identifiable, Codable {
     var systemName: String {
         switch self {
         case .smile: return "face.smiling"
-        case .neutral: return "face.neutral"
+        case .neutral: return "sun.max"
         case .sad: return "face.dashed"
         }
     }
@@ -137,67 +136,30 @@ struct ContentView: View {
                 // Scrollable content below
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        if scope == .year {
-                            // Year list from current year back to oldest
-                            let cal = Calendar.current
-                            let currentYear = cal.component(.year, from: anchorDate)
-                            let years = stride(from: currentYear, through: oldestYear, by: -1).map { $0 }
-                            ForEach(years, id: \.self) { year in
-                                Text("\(year)")
-                                    .font(.headline)
-                                    .padding(.horizontal)
-                                if !selectedProfiles.isEmpty {
-                                    ForEach(selectedProfiles) { profile in
-                                        ProfileSection(profile: binding(for: profile), scope: .year, anchorDate: cal.date(from: DateComponents(year: year, month: 1, day: 1)) ?? anchorDate, isEditing: isEditing, onImageChange: { data in
-                                            profiles.first { $0.id == profile.id }?.imageData = data
-                                            try? modelContext.save()
-                                        })
-                                    }
-                                } else {
-                                    VStack(spacing: 12) {
-                                        if profiles.isEmpty {
-                                            Text("No profiles yet.")
-                                                .foregroundStyle(.secondary)
-                                            Button {
-                                                showingAddSheet = true
-                                            } label: {
-                                                Label("Add your first profile", systemImage: "plus.circle.fill")
-                                            }
-                                            .buttonStyle(.borderedProminent)
-                                        } else {
-                                            Text("Select users from the group menu to display.")
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .padding(.top, 8)
-                                }
+                        if !selectedProfiles.isEmpty {
+                            ForEach(selectedProfiles) { profile in
+                                ProfileSection(profile: binding(for: profile), scope: scope, anchorDate: anchorDate, isEditing: isEditing, onImageChange: { data in
+                                    profiles.first { $0.id == profile.id }?.imageData = data
+                                    try? modelContext.save()
+                                })
                             }
                         } else {
-                            if !selectedProfiles.isEmpty {
-                                ForEach(selectedProfiles) { profile in
-                                    ProfileSection(profile: binding(for: profile), scope: scope, anchorDate: anchorDate, isEditing: isEditing, onImageChange: { data in
-                                        profiles.first { $0.id == profile.id }?.imageData = data
-                                        try? modelContext.save()
-                                    })
-                                }
-                            } else {
-                                VStack(spacing: 12) {
-                                    if profiles.isEmpty {
-                                        Text("No profiles yet.")
-                                            .foregroundStyle(.secondary)
-                                        Button {
-                                            showingAddSheet = true
-                                        } label: {
-                                            Label("Add your first profile", systemImage: "plus.circle.fill")
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                    } else {
-                                        Text("Select users from the group menu to display.")
-                                            .foregroundStyle(.secondary)
+                            VStack(spacing: 12) {
+                                if profiles.isEmpty {
+                                    Text("No profiles yet.")
+                                        .foregroundStyle(.secondary)
+                                    Button {
+                                        showingAddSheet = true
+                                    } label: {
+                                        Label("Add your first profile", systemImage: "plus.circle.fill")
                                     }
+                                    .buttonStyle(.borderedProminent)
+                                } else {
+                                    Text("Select users from the group menu to display.")
+                                        .foregroundStyle(.secondary)
                                 }
-                                .padding(.top, 40)
                             }
+                            .padding(.top, 40)
                         }
                     }
                     .padding()
@@ -344,7 +306,7 @@ struct ContentView: View {
     }
 
     private func shiftAnchor(by delta: Int) {
-        let comp: Calendar.Component = (scope == .week) ? .weekOfYear : (scope == .month ? .month : .year)
+        let comp: Calendar.Component = (scope == .week) ? .weekOfYear : .month
         if let newDate = Calendar.current.date(byAdding: comp, value: delta, to: anchorDate) {
             anchorDate = newDate
         }
@@ -354,13 +316,6 @@ struct ContentView: View {
         // Intentionally left empty to prevent auto-seeding demo profiles
     }
     
-    private var oldestYear: Int {
-        let cal = Calendar.current
-        let candidateDates = profiles.flatMap { $0.entries.map { $0.date } }
-        let minDate = candidateDates.min() ?? Date()
-        return cal.component(.year, from: minDate)
-    }
-
     private func cleanupSeededProfilesIfNeeded() {
         guard !didCleanupSeededProfiles else { return }
         let seededNames: Set<String> = ["User 1", "User 2"]
@@ -566,7 +521,7 @@ struct CalendarGrid: View {
             VStack(spacing: 8) {
                 // Weekday headers
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
-                    ForEach(weekdaySymbols, id: \.self) { sym in
+                    ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, sym in
                         Text(sym.uppercased())
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -598,7 +553,7 @@ struct CalendarGrid: View {
             VStack(spacing: 8) {
                 // Weekday headers for the week view
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
-                    ForEach(weekdaySymbols, id: \.self) { sym in
+                    ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, sym in
                         Text(sym.uppercased())
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -613,18 +568,6 @@ struct CalendarGrid: View {
                                 onSelect: { selectedDate = dayOnly(day) },
                                 onSetMood: { setMood(day, $0) })
                     }
-                }
-            }
-        case .year:
-            // Keep existing behavior: representative day per week
-            let days = daysForScope(scope, anchorDate)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
-                ForEach(days, id: \.self) { day in
-                    DayCell(date: day,
-                            isSelected: dayOnly(day) == dayOnly(selectedDate),
-                            mood: getMood(day),
-                            onSelect: { selectedDate = dayOnly(day) },
-                            onSetMood: { setMood(day, $0) })
                 }
             }
         }
@@ -723,16 +666,6 @@ func daysForScope(_ scope: CalendarScope, _ anchorDate: Date) -> [Date] {
     case .month:
         let interval = cal.dateInterval(of: .month, for: anchorDate)!
         return stride(from: interval.start, to: interval.end, by: 24*60*60).map { $0 }
-    case .year:
-        let interval = cal.dateInterval(of: .year, for: anchorDate)!
-        // Show one representative day per week to keep grid manageable (52-ish)
-        var dates: [Date] = []
-        var current = interval.start
-        while current < interval.end {
-            dates.append(current)
-            current = cal.date(byAdding: .weekOfYear, value: 1, to: current)!
-        }
-        return dates
     }
 }
 
