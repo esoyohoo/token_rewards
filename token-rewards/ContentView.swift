@@ -387,6 +387,12 @@ struct ProfileSection: View {
                     Text(profile.name).font(.headline)
                 }
                 Spacer()
+                // 🟢 NEW: Display MM/YYYY on the right side if the scope is Month
+                if scope == .month {
+                    Text(formattedMonthYear(anchorDate))
+                        .font(.headline)
+                        .foregroundStyle(.secondary) // Keeps it subtly styled
+                }
             }
             Text(formattedMDY(selectedDate))
                 .font(.caption)
@@ -684,6 +690,13 @@ func formattedMDY(_ date: Date) -> String {
     let f = DateFormatter()
     f.calendar = Calendar.current
     f.dateFormat = "MM/dd/yyyy"
+    return f.string(from: date)
+}
+
+func formattedMonthYear(_ date: Date) -> String {
+    let f = DateFormatter()
+    f.calendar = Calendar.current
+    f.dateFormat = "MM/yyyy"
     return f.string(from: date)
 }
 
