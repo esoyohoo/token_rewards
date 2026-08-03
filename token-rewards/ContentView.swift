@@ -521,7 +521,7 @@ struct CalendarGrid: View {
             VStack(spacing: 8) {
                 // Weekday headers
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
-                    ForEach(weekdaySymbols, id: \.self) { sym in
+                    ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, sym in
                         Text(sym.uppercased())
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -553,7 +553,7 @@ struct CalendarGrid: View {
             VStack(spacing: 8) {
                 // Weekday headers for the week view
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
-                    ForEach(weekdaySymbols, id: \.self) { sym in
+                    ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, sym in
                         Text(sym.uppercased())
                             .font(.caption2)
                             .foregroundStyle(.secondary)
