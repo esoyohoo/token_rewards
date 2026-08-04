@@ -105,6 +105,8 @@ struct ContentView: View {
     @State private var isEditing: Bool = false
     // Removed: @State private var showingProfilesEditSheet = false
 
+    @AppStorage("didCleanupSeededProfiles") private var didCleanupSeededProfiles: Bool = false
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -142,9 +144,22 @@ struct ContentView: View {
                                 })
                             }
                         } else {
-                            Text("Select users from the group menu to display.")
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 40)
+                            VStack(spacing: 12) {
+                                if profiles.isEmpty {
+                                    Text("No profiles yet.")
+                                        .foregroundStyle(.secondary)
+                                    Button {
+                                        showingAddSheet = true
+                                    } label: {
+                                        Label("Add your first profile", systemImage: "plus.circle.fill")
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                } else {
+                                    Text("Select users from the group menu to display.")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.top, 40)
                         }
                     }
                     .padding()
@@ -165,28 +180,38 @@ struct ContentView: View {
                 }
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Menu {
-                        Section("Select users to display (up to 20)") {
-                            ForEach(profiles) { profile in
-                                let isSelected = selectedProfileIDs.contains(profile.id)
-                                Button {
-                                    toggleProfileSelection(profile.id)
-                                } label: {
-                                    Label("\(profile.emoji) \(profile.name)", systemImage: isSelected ? "checkmark.circle.fill" : "circle")
-                                }
-                                .disabled(!isSelected && selectedProfileIDs.count >= 20)
-                            }
+                    if profiles.isEmpty {
+                        // First-time use: show only a clear Add button
+                        Button {
+                            showingAddSheet = true
+                        } label: {
+                            Image(systemName: "plus")
                         }
-                    } label: {
-                        Image(systemName: "person.2")
-                    }
+                        .accessibilityLabel("Add profile")
+                    } else {
+                        // Existing users: show full toolbar options
+                        Menu {
+                            Section("Select users to display (up to 20)") {
+                                ForEach(profiles) { profile in
+                                    let isSelected = selectedProfileIDs.contains(profile.id)
+                                    Button {
+                                        toggleProfileSelection(profile.id)
+                                    } label: {
+                                        Label("\(profile.emoji) \(profile.name)", systemImage: isSelected ? "checkmark.circle.fill" : "circle")
+                                    }
+                                    .disabled(!isSelected && selectedProfileIDs.count >= 20)
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "person.2")
+                        }
 
-                    Button("Overview") { showingOverview = true }
+                        Button("Overview") { showingOverview = true }
 
-                    Menu("Edit") {
-                        Button("Add") { showingAddSheet = true }
-                        // Removed Button("Edit") { showingProfilesEditSheet = true }
-                        Button("Remove") { beginRemoveFlow() }
+                        Menu("Edit") {
+                            Button("Add") { showingAddSheet = true }
+                            Button("Remove") { beginRemoveFlow() }
+                        }
                     }
                 }
             })
@@ -214,6 +239,7 @@ struct ContentView: View {
             // Removed .sheet(isPresented: $showingProfilesEditSheet) {...}
             .onAppear {
                 seedIfNeeded()
+                cleanupSeededProfilesIfNeeded()
             }
         }
     }
@@ -287,17 +313,22 @@ struct ContentView: View {
     }
 
     private func seedIfNeeded() {
-        if profiles.isEmpty {
-            let p1 = ProfileEntity(name: "User 1", emoji: "🧑")
-            let p2 = ProfileEntity(name: "User 2", emoji: "👩")
-            p1.sortOrder = 0
-            p2.sortOrder = 1
-            modelContext.insert(p1)
-            modelContext.insert(p2)
+        // Intentionally left empty to prevent auto-seeding demo profiles
+    }
+
+    private func cleanupSeededProfilesIfNeeded() {
+        guard !didCleanupSeededProfiles else { return }
+        let seededNames: Set<String> = ["User 1", "User 2"]
+        var didDeleteAny = false
+        for p in profiles where seededNames.contains(p.name) {
+            modelContext.delete(p)
+            didDeleteAny = true
+        }
+        if didDeleteAny {
             try? modelContext.save()
         }
+        didCleanupSeededProfiles = true
     }
-    
 }
 
 // MARK: - Profile Section
@@ -359,6 +390,7 @@ struct ProfileSection: View {
                 if scope == .month {
                     Text(formattedMonthYear(anchorDate))
                         .font(.headline)
+                        .foregroundStyle(.secondary)
                 }
             }
             Text(formattedMDY(selectedDate))
