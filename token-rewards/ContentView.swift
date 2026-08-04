@@ -41,9 +41,9 @@ enum Mood: String, CaseIterable, Identifiable, Codable {
 
     var systemName: String {
         switch self {
-        case .smile: return "face.smiling"
-        case .neutral: return "sun.max"
-        case .sad: return "face.dashed"
+        case .smile: return "hand.thumbsup"
+        case .neutral: return "minus.circle"
+        case .sad: return "hand.thumbsdown"
         }
     }
 }
@@ -306,7 +306,7 @@ struct ContentView: View {
     }
 
     private func shiftAnchor(by delta: Int) {
-        let comp: Calendar.Component = (scope == .week) ? .weekOfYear : .month
+        let comp: Calendar.Component = scope == .week ? .weekOfYear : .month
         if let newDate = Calendar.current.date(byAdding: comp, value: delta, to: anchorDate) {
             anchorDate = newDate
         }
@@ -315,7 +315,7 @@ struct ContentView: View {
     private func seedIfNeeded() {
         // Intentionally left empty to prevent auto-seeding demo profiles
     }
-    
+
     private func cleanupSeededProfilesIfNeeded() {
         guard !didCleanupSeededProfiles else { return }
         let seededNames: Set<String> = ["User 1", "User 2"]
@@ -387,11 +387,10 @@ struct ProfileSection: View {
                     Text(profile.name).font(.headline)
                 }
                 Spacer()
-                // 🟢 NEW: Display MM/YYYY on the right side if the scope is Month
                 if scope == .month {
                     Text(formattedMonthYear(anchorDate))
                         .font(.headline)
-                        .foregroundStyle(.secondary) // Keeps it subtly styled
+                        .foregroundStyle(.secondary)
                 }
             }
             Text(formattedMDY(selectedDate))
@@ -527,8 +526,8 @@ struct CalendarGrid: View {
             VStack(spacing: 8) {
                 // Weekday headers
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
-                    ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, sym in
-                        Text(sym.uppercased())
+                    ForEach(weekdaySymbols.indices, id: \.self) { index in
+                        Text(weekdaySymbols[index].uppercased())
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
@@ -559,8 +558,8 @@ struct CalendarGrid: View {
             VStack(spacing: 8) {
                 // Weekday headers for the week view
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
-                    ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, sym in
-                        Text(sym.uppercased())
+                    ForEach(weekdaySymbols.indices, id: \.self) { index in
+                        Text(weekdaySymbols[index].uppercased())
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
