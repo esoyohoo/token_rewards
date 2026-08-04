@@ -42,9 +42,9 @@ enum Mood: String, CaseIterable, Identifiable, Codable {
 
     var systemName: String {
         switch self {
-        case .smile: return "face.smiling"
-        case .neutral: return "face.neutral"
-        case .sad: return "face.dashed"
+        case .smile: return "hand.thumbsup"
+        case .neutral: return "minus.circle"
+        case .sad: return "hand.thumbsdown"
         }
     }
 }
