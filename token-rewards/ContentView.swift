@@ -96,6 +96,7 @@ struct ContentView: View {
     @Query(sort: [SortDescriptor(\ProfileEntity.sortOrder, order: .forward), SortDescriptor(\ProfileEntity.name, order: .forward)]) private var profiles: [ProfileEntity]
     @State private var selectedProfileIDs: Set<UUID> = []
     @State private var showingAddSheet = false
+    @State private var showingEditProfiles = false
     @State private var showingRemoveProfiles = false
     @State private var showingOverview = false
     @State private var anchorDate: Date = Date()
@@ -208,6 +209,7 @@ struct ContentView: View {
 
                         Menu("Edit") {
                             Button("Add") { showingAddSheet = true }
+                            Button("Edit") { showingEditProfiles = true }
                             Button("Remove") { showingRemoveProfiles = true }
                         }
                     }
@@ -221,6 +223,10 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingRemoveProfiles) {
                 RemoveProfilesSheet(profiles: profiles, onDelete: deleteProfile)
+                    .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $showingEditProfiles) {
+                EditProfilesSheet(profiles: profiles, onSave: updateProfile)
                     .presentationDetents([.medium, .large])
             }
             .sheet(isPresented: $showingOverview) {
@@ -267,6 +273,14 @@ struct ContentView: View {
         guard let profile = profiles.first(where: { $0.id == id }) else { return }
         selectedProfileIDs.remove(id)
         modelContext.delete(profile)
+        try? modelContext.save()
+    }
+
+    private func updateProfile(_ id: UUID, name: String, emoji: String, imageData: Data?) {
+        guard let profile = profiles.first(where: { $0.id == id }) else { return }
+        profile.name = name
+        profile.emoji = emoji
+        profile.imageData = imageData
         try? modelContext.save()
     }
 
@@ -358,6 +372,53 @@ struct RemoveProfilesSheet: View {
                 }
             } message: {
                 Text("Delete this profile and all of its entries?")
+            }
+        }
+    }
+}
+
+struct EditProfilesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let profiles: [ProfileEntity]
+    let onSave: (UUID, String, String, Data?) -> Void
+    @State private var selectedProfile: ProfileEntity?
+
+    var body: some View {
+        NavigationStack {
+            List(profiles) { profile in
+                Button {
+                    selectedProfile = profile
+                } label: {
+                    HStack(spacing: 12) {
+                        if let data = profile.imageData, let image = UIImage(data: data) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 36, height: 36)
+                                .clipShape(Circle())
+                        } else {
+                            Text(profile.emoji)
+                                .font(.title2)
+                                .frame(width: 36, height: 36)
+                        }
+                        Text(profile.name)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .navigationTitle("Edit Profiles")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .sheet(item: $selectedProfile) { profile in
+                EditProfileSheet(profile: profile) { name, emoji, imageData in
+                    onSave(profile.id, name, emoji, imageData)
+                }
             }
         }
     }
@@ -880,18 +941,18 @@ struct AddProfileSheet: View {
 struct EditProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
+    @State private var selectedEmoji: String
     @State private var pickedImageData: Data?
 
-    @State private var showCamera = false
-    @State private var showDocumentPicker = false
-
     let profile: ProfileEntity
-    let onSave: (String, Data?) -> Void
+    let onSave: (String, String, Data?) -> Void
+    private let emojiOptions: [String] = ["🙂","😀","😎","🤓","🥳","🧒","👦","👧","🧑","👩","👨","🧔","👩‍🦰","👩‍🦱","👩‍🦳","👨‍🦰","👨‍🦱","👨‍🦳","👶","🧓"]
 
-    init(profile: ProfileEntity, onSave: @escaping (String, Data?) -> Void) {
+    init(profile: ProfileEntity, onSave: @escaping (String, String, Data?) -> Void) {
         self.profile = profile
         self.onSave = onSave
         _name = State(initialValue: profile.name)
+        _selectedEmoji = State(initialValue: profile.emoji)
         _pickedImageData = State(initialValue: profile.imageData)
     }
 
@@ -910,17 +971,31 @@ struct EditProfileSheet: View {
                                 .frame(width: 80, height: 80)
                                 .clipShape(Circle())
                         } else {
-                            ZStack {
-                                Circle().fill(Color.gray.opacity(0.2)).frame(width: 80, height: 80)
-                                Image(systemName: "person.crop.circle").font(.largeTitle).foregroundStyle(.secondary)
-                            }
+                            Text(selectedEmoji)
+                                .font(.system(size: 56))
+                                .frame(width: 80, height: 80)
                         }
                         PhotosPicker("Choose from Library", selection: $photoSelection, matching: .images)
-                        Button("Take Photo") { showCamera = true }
-                            .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-                        Button("Choose from Files") { showDocumentPicker = true }
                         Button("Remove Photo", role: .destructive) { pickedImageData = nil }
                             .disabled(pickedImageData == nil)
+                    }
+                }
+                Section("Choose an emoji") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(emojiOptions, id: \.self) { emoji in
+                                Text(emoji)
+                                    .font(.largeTitle)
+                                    .padding(6)
+                                    .background(selectedEmoji == emoji ? Color.blue.opacity(0.2) : Color.clear)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .onTapGesture {
+                                        selectedEmoji = emoji
+                                        pickedImageData = nil
+                                    }
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
                 }
             }
@@ -931,7 +1006,9 @@ struct EditProfileSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(name, pickedImageData)
+                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmedName.isEmpty else { return }
+                        onSave(trimmedName, selectedEmoji, pickedImageData)
                         dismiss()
                     }
                 }
@@ -941,23 +1018,6 @@ struct EditProfileSheet: View {
             }
             .onChange(of: photoSelection) { _, _ in
                 Task { await loadSelectedPhoto() }
-            }
-            .sheet(isPresented: $showCamera) {
-                CameraImagePicker(sourceType: .camera) { image in
-                    if let sourceData = image.jpegData(compressionQuality: 0.9),
-                       let data = profileImageData(from: sourceData) {
-                        pickedImageData = data
-                    }
-                }
-            }
-            .sheet(isPresented: $showDocumentPicker) {
-                DocumentPicker(allowedContentTypes: [UTType.image]) { url in
-                    if let url,
-                       let sourceData = try? Data(contentsOf: url),
-                       let data = profileImageData(from: sourceData) {
-                        pickedImageData = data
-                    }
-                }
             }
         }
     }
