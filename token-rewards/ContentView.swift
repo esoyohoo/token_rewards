@@ -96,9 +96,8 @@ struct ContentView: View {
     @Query(sort: [SortDescriptor(\ProfileEntity.sortOrder, order: .forward), SortDescriptor(\ProfileEntity.name, order: .forward)]) private var profiles: [ProfileEntity]
     @State private var selectedProfileIDs: Set<UUID> = []
     @State private var showingAddSheet = false
-    @State private var showingRemoveConfirm = false
-    @State private var removeConfirmStep = 0
-    @State private var removeErrorMessage: String? = nil
+    @State private var showingEditProfiles = false
+    @State private var showingRemoveProfiles = false
     @State private var showingOverview = false
     @State private var anchorDate: Date = Date()
     @State private var editingProfileID: UUID? = nil
@@ -210,27 +209,25 @@ struct ContentView: View {
 
                         Menu("Edit") {
                             Button("Add") { showingAddSheet = true }
-                            Button("Remove") { beginRemoveFlow() }
+                            Button("Edit") { showingEditProfiles = true }
+                            Button("Remove") { showingRemoveProfiles = true }
                         }
                     }
                 }
             })
             .sheet(isPresented: $showingAddSheet) {
-                AddProfileSheet { name, emoji in
-                    addProfile(name: name, emoji: emoji)
+                AddProfileSheet { name, emoji, imageData in
+                    addProfile(name: name, emoji: emoji, imageData: imageData)
                 }
                 .presentationDetents([.medium])
             }
-            .alert("Please confirm", isPresented: $showingRemoveConfirm) {
-                if removeConfirmStep == 0 {
-                    Button("Yes") { handleRemoveYes() }
-                    Button("No", role: .cancel) { cancelRemoveFlow() }
-                } else {
-                    Button("Yes") { handleRemoveYes() }
-                    Button("No", role: .cancel) { cancelRemoveFlow() }
-                }
-            } message: {
-                Text(removeErrorMessage ?? (removeConfirmStep == 0 ? "Step 1: Select Yes to continue." : "Step 2: Select Yes again to confirm deletion."))
+            .sheet(isPresented: $showingRemoveProfiles) {
+                RemoveProfilesSheet(profiles: profiles, onDelete: deleteProfile)
+                    .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $showingEditProfiles) {
+                EditProfilesSheet(profiles: profiles, onSave: updateProfile)
+                    .presentationDetents([.medium, .large])
             }
             .sheet(isPresented: $showingOverview) {
                 OverviewView(profiles: profiles)
@@ -249,11 +246,10 @@ struct ContentView: View {
     }
 
     private func binding(for profile: ProfileEntity) -> Binding<ProfileEntity> {
-        guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else { fatalError("Profile not found") }
-        return Binding(get: { profiles[index] }, set: { newValue in
-            profiles[index].name = newValue.name
-            profiles[index].emoji = newValue.emoji
-            profiles[index].imageData = newValue.imageData
+        Binding(get: { profile }, set: { newValue in
+            profile.name = newValue.name
+            profile.emoji = newValue.emoji
+            profile.imageData = newValue.imageData
         })
     }
 
@@ -265,44 +261,27 @@ struct ContentView: View {
         }
     }
 
-    private func addProfile(name: String, emoji: String) {
-        let new = ProfileEntity(name: name, emoji: emoji)
+    private func addProfile(name: String, emoji: String, imageData: Data?) {
+        let new = ProfileEntity(name: name, emoji: emoji, imageData: imageData)
         new.sortOrder = (profiles.map { $0.sortOrder }.max() ?? -1) + 1
         modelContext.insert(new)
         try? modelContext.save()
         selectedProfileIDs.insert(new.id)
     }
 
-    private func beginRemoveFlow() {
-        removeConfirmStep = 0
-        removeErrorMessage = nil
-        showingRemoveConfirm = true
+    private func deleteProfile(_ id: UUID) {
+        guard let profile = profiles.first(where: { $0.id == id }) else { return }
+        selectedProfileIDs.remove(id)
+        modelContext.delete(profile)
+        try? modelContext.save()
     }
 
-    private func handleRemoveYes() {
-        if removeConfirmStep == 0 {
-            removeConfirmStep = 1
-            removeErrorMessage = nil
-            showingRemoveConfirm = true
-        } else {
-            if selectedProfileIDs.isEmpty {
-                removeErrorMessage = "please select Yes"
-                removeConfirmStep = 0
-                showingRemoveConfirm = true
-                return
-            }
-            for p in profiles where selectedProfileIDs.contains(p.id) {
-                modelContext.delete(p)
-            }
-            try? modelContext.save()
-            selectedProfileIDs.removeAll()
-            showingRemoveConfirm = false
-        }
-    }
-
-    private func cancelRemoveFlow() {
-        removeErrorMessage = "please select Yes"
-        showingRemoveConfirm = true
+    private func updateProfile(_ id: UUID, name: String, emoji: String, imageData: Data?) {
+        guard let profile = profiles.first(where: { $0.id == id }) else { return }
+        profile.name = name
+        profile.emoji = emoji
+        profile.imageData = imageData
+        try? modelContext.save()
     }
 
     private func shiftAnchor(by delta: Int) {
@@ -328,6 +307,120 @@ struct ContentView: View {
             try? modelContext.save()
         }
         didCleanupSeededProfiles = true
+    }
+}
+
+struct RemoveProfilesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let profiles: [ProfileEntity]
+    let onDelete: (UUID) -> Void
+    @State private var pendingProfileID: UUID?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if profiles.isEmpty {
+                    Text("No profiles to remove.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(profiles) { profile in
+                        HStack(spacing: 12) {
+                            if let data = profile.imageData, let image = UIImage(data: data) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 36, height: 36)
+                                    .clipShape(Circle())
+                            } else {
+                                Text(profile.emoji)
+                                    .font(.title2)
+                                    .frame(width: 36, height: 36)
+                            }
+
+                            Text(profile.name)
+                            Spacer()
+                            Button(role: .destructive) {
+                                pendingProfileID = profile.id
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(profile.name)")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Remove Profiles")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .alert("Please confirm", isPresented: Binding(
+                get: { pendingProfileID != nil },
+                set: { if !$0 { pendingProfileID = nil } }
+            )) {
+                Button("Delete", role: .destructive) {
+                    guard let id = pendingProfileID else { return }
+                    onDelete(id)
+                    pendingProfileID = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingProfileID = nil
+                }
+            } message: {
+                Text("Delete this profile and all of its entries?")
+            }
+        }
+    }
+}
+
+struct EditProfilesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let profiles: [ProfileEntity]
+    let onSave: (UUID, String, String, Data?) -> Void
+    @State private var selectedProfile: ProfileEntity?
+
+    var body: some View {
+        NavigationStack {
+            List(profiles) { profile in
+                Button {
+                    selectedProfile = profile
+                } label: {
+                    HStack(spacing: 12) {
+                        if let data = profile.imageData, let image = UIImage(data: data) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 36, height: 36)
+                                .clipShape(Circle())
+                        } else {
+                            Text(profile.emoji)
+                                .font(.title2)
+                                .frame(width: 36, height: 36)
+                        }
+                        Text(profile.name)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .navigationTitle("Edit Profiles")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .sheet(item: $selectedProfile) { profile in
+                EditProfileSheet(profile: profile) { name, emoji, imageData in
+                    onSave(profile.id, name, emoji, imageData)
+                }
+            }
+        }
     }
 }
 
@@ -391,6 +484,12 @@ struct ProfileSection: View {
                     Text(formattedMonthYear(anchorDate))
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                } else {
+                    Text(formattedWeekRange(anchorDate))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
             }
             Text(formattedMDY(selectedDate))
@@ -444,14 +543,17 @@ struct ProfileSection: View {
         }
         .sheet(isPresented: $showCamera) {
             CameraImagePicker(sourceType: .camera) { image in
-                if let data = image.jpegData(compressionQuality: 0.9) {
+                if let sourceData = image.jpegData(compressionQuality: 0.9),
+                   let data = profileImageData(from: sourceData) {
                     onImageChange(data)
                 }
             }
         }
         .sheet(isPresented: $showDocumentPicker) {
             DocumentPicker(allowedContentTypes: [UTType.image]) { url in
-                if let url, let data = try? Data(contentsOf: url) {
+                if let url,
+                   let sourceData = try? Data(contentsOf: url),
+                   let data = profileImageData(from: sourceData) {
                     onImageChange(data)
                 }
             }
@@ -467,7 +569,8 @@ struct ProfileSection: View {
 extension ProfileSection {
     func loadSelectedPhoto() async {
         guard let item = photoSelection else { return }
-        if let data = try? await item.loadTransferable(type: Data.self) {
+        if let sourceData = try? await item.loadTransferable(type: Data.self),
+           let data = profileImageData(from: sourceData) {
             await MainActor.run { onImageChange(data) }
         }
     }
@@ -585,22 +688,16 @@ struct DayCell: View {
     let mood: Mood?
     let onSelect: () -> Void
     let onSetMood: (Mood?) -> Void
+    @State private var showingMoodOptions = false
 
     var body: some View {
         VStack(spacing: 6) {
             Text(dayNumber(date))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Menu {
-                ForEach(Mood.allCases) { m in
-                    Button { onSetMood(m) } label: {
-                        Label(m.rawValue.capitalized, systemImage: m.systemName)
-                            .foregroundStyle(m.color)
-                    }
-                }
-                if mood != nil {
-                    Button(role: .destructive) { onSetMood(nil) } label: { Label("Clear", systemImage: "xmark.circle") }
-                }
+            Button {
+                onSelect()
+                showingMoodOptions = true
             } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
@@ -617,6 +714,7 @@ struct DayCell: View {
                     }
                 }
             }
+            .buttonStyle(.plain)
         }
         .padding(6)
         .background(
@@ -624,6 +722,21 @@ struct DayCell: View {
                 .stroke(Color.gray.opacity(0.2))
         )
         .onTapGesture { onSelect() }
+        .confirmationDialog("Set mood", isPresented: $showingMoodOptions, titleVisibility: .visible) {
+            ForEach(Mood.allCases) { m in
+                Button {
+                    onSetMood(m)
+                } label: {
+                    Label(m.rawValue.capitalized, systemImage: m.systemName)
+                }
+            }
+            if mood != nil {
+                Button("Clear", role: .destructive) {
+                    onSetMood(nil)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
 
@@ -699,13 +812,48 @@ func formattedMonthYear(_ date: Date) -> String {
     return f.string(from: date)
 }
 
+func formattedWeekRange(_ date: Date) -> String {
+    let cal = Calendar.current
+    guard let interval = cal.dateInterval(of: .weekOfYear, for: date),
+          let lastDay = cal.date(byAdding: .day, value: -1, to: interval.end) else {
+        return formattedMDY(date)
+    }
+    return "\(formattedMDY(interval.start)) – \(formattedMDY(lastDay))"
+}
+
+func profileImageData(from sourceData: Data) -> Data? {
+    guard let sourceImage = UIImage(data: sourceData),
+          sourceImage.size.width > 0,
+          sourceImage.size.height > 0 else { return nil }
+
+    let targetSize = CGSize(width: 16, height: 16)
+    let scale = max(targetSize.width / sourceImage.size.width,
+                    targetSize.height / sourceImage.size.height)
+    let drawSize = CGSize(width: sourceImage.size.width * scale,
+                          height: sourceImage.size.height * scale)
+    let drawRect = CGRect(x: (targetSize.width - drawSize.width) / 2,
+                          y: (targetSize.height - drawSize.height) / 2,
+                          width: drawSize.width,
+                          height: drawSize.height)
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = false
+    let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+    return renderer.image { _ in
+        sourceImage.draw(in: drawRect)
+    }.pngData()
+}
+
 // MARK: - Add Profile Sheet
 struct AddProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String = ""
     @State private var selectedEmoji: String = "🙂"
+    @State private var selectedImageData: Data?
+    @State private var showPhotoLibrary = false
 
-    let onAdd: (String, String) -> Void
+    let onAdd: (String, String, Data?) -> Void
 
     // Simple emoji palette to simulate choosing from iOS emoji
     private let emojiOptions: [String] = ["🙂","😀","😎","🤓","🥳","🧒","👦","👧","🧑","👩","👨","🧔","👩‍🦰","👩‍🦱","👩‍🦳","👨‍🦰","👨‍🦱","👨‍🦳","👶","🧓"]
@@ -716,6 +864,35 @@ struct AddProfileSheet: View {
                 Section("Profile Name") {
                     TextField("Name", text: $name)
                 }
+                Section("Profile Picture") {
+                    HStack(spacing: 16) {
+                        if let data = selectedImageData, let image = UIImage(data: data) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 72, height: 72)
+                                .clipShape(Circle())
+                        } else {
+                            Text(selectedEmoji)
+                                .font(.system(size: 52))
+                                .frame(width: 72, height: 72)
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            Button {
+                                showPhotoLibrary = true
+                            } label: {
+                                Label("Photos Library", systemImage: "photo.on.rectangle")
+                            }
+
+                            if selectedImageData != nil {
+                                Button("Use Emoji Instead", role: .destructive) {
+                                    selectedImageData = nil
+                                }
+                            }
+                        }
+                    }
+                }
                 Section("Choose an emoji") {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
@@ -725,7 +902,10 @@ struct AddProfileSheet: View {
                                     .padding(6)
                                     .background(selectedEmoji == emoji ? Color.blue.opacity(0.2) : Color.clear)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .onTapGesture { selectedEmoji = emoji }
+                                    .onTapGesture {
+                                        selectedEmoji = emoji
+                                        selectedImageData = nil
+                                    }
                             }
                         }
                         .padding(.vertical, 4)
@@ -740,11 +920,19 @@ struct AddProfileSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                        onAdd(name, selectedEmoji)
+                        onAdd(name, selectedEmoji, selectedImageData)
                         dismiss()
                     }
                 }
             })
+            .sheet(isPresented: $showPhotoLibrary) {
+                CameraImagePicker(sourceType: .photoLibrary) { image in
+                    if let sourceData = image.pngData(),
+                       let data = profileImageData(from: sourceData) {
+                        selectedImageData = data
+                    }
+                }
+            }
         }
     }
 }
@@ -753,18 +941,18 @@ struct AddProfileSheet: View {
 struct EditProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
+    @State private var selectedEmoji: String
     @State private var pickedImageData: Data?
 
-    @State private var showCamera = false
-    @State private var showDocumentPicker = false
-
     let profile: ProfileEntity
-    let onSave: (String, Data?) -> Void
+    let onSave: (String, String, Data?) -> Void
+    private let emojiOptions: [String] = ["🙂","😀","😎","🤓","🥳","🧒","👦","👧","🧑","👩","👨","🧔","👩‍🦰","👩‍🦱","👩‍🦳","👨‍🦰","👨‍🦱","👨‍🦳","👶","🧓"]
 
-    init(profile: ProfileEntity, onSave: @escaping (String, Data?) -> Void) {
+    init(profile: ProfileEntity, onSave: @escaping (String, String, Data?) -> Void) {
         self.profile = profile
         self.onSave = onSave
         _name = State(initialValue: profile.name)
+        _selectedEmoji = State(initialValue: profile.emoji)
         _pickedImageData = State(initialValue: profile.imageData)
     }
 
@@ -783,17 +971,31 @@ struct EditProfileSheet: View {
                                 .frame(width: 80, height: 80)
                                 .clipShape(Circle())
                         } else {
-                            ZStack {
-                                Circle().fill(Color.gray.opacity(0.2)).frame(width: 80, height: 80)
-                                Image(systemName: "person.crop.circle").font(.largeTitle).foregroundStyle(.secondary)
-                            }
+                            Text(selectedEmoji)
+                                .font(.system(size: 56))
+                                .frame(width: 80, height: 80)
                         }
                         PhotosPicker("Choose from Library", selection: $photoSelection, matching: .images)
-                        Button("Take Photo") { showCamera = true }
-                            .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-                        Button("Choose from Files") { showDocumentPicker = true }
                         Button("Remove Photo", role: .destructive) { pickedImageData = nil }
                             .disabled(pickedImageData == nil)
+                    }
+                }
+                Section("Choose an emoji") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack {
+                            ForEach(emojiOptions, id: \.self) { emoji in
+                                Text(emoji)
+                                    .font(.largeTitle)
+                                    .padding(6)
+                                    .background(selectedEmoji == emoji ? Color.blue.opacity(0.2) : Color.clear)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .onTapGesture {
+                                        selectedEmoji = emoji
+                                        pickedImageData = nil
+                                    }
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
                 }
             }
@@ -804,7 +1006,9 @@ struct EditProfileSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        onSave(name, pickedImageData)
+                        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmedName.isEmpty else { return }
+                        onSave(trimmedName, selectedEmoji, pickedImageData)
                         dismiss()
                     }
                 }
@@ -814,20 +1018,6 @@ struct EditProfileSheet: View {
             }
             .onChange(of: photoSelection) { _, _ in
                 Task { await loadSelectedPhoto() }
-            }
-            .sheet(isPresented: $showCamera) {
-                CameraImagePicker(sourceType: .camera) { image in
-                    if let data = image.jpegData(compressionQuality: 0.9) {
-                        pickedImageData = data
-                    }
-                }
-            }
-            .sheet(isPresented: $showDocumentPicker) {
-                DocumentPicker(allowedContentTypes: [UTType.image]) { url in
-                    if let url, let data = try? Data(contentsOf: url) {
-                        pickedImageData = data
-                    }
-                }
             }
         }
     }
@@ -839,7 +1029,8 @@ struct EditProfileSheet: View {
 extension EditProfileSheet {
     func loadSelectedPhoto() async {
         guard let item = photoSelection else { return }
-        if let data = try? await item.loadTransferable(type: Data.self) {
+        if let sourceData = try? await item.loadTransferable(type: Data.self),
+           let data = profileImageData(from: sourceData) {
             await MainActor.run { pickedImageData = data }
         }
     }
