@@ -391,6 +391,12 @@ struct ProfileSection: View {
                     Text(formattedMonthYear(anchorDate))
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                } else {
+                    Text(formattedWeekRange(anchorDate))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
             }
             Text(formattedMDY(selectedDate))
@@ -697,6 +703,15 @@ func formattedMonthYear(_ date: Date) -> String {
     f.calendar = Calendar.current
     f.dateFormat = "MM/yyyy"
     return f.string(from: date)
+}
+
+func formattedWeekRange(_ date: Date) -> String {
+    let cal = Calendar.current
+    guard let interval = cal.dateInterval(of: .weekOfYear, for: date),
+          let lastDay = cal.date(byAdding: .day, value: -1, to: interval.end) else {
+        return formattedMDY(date)
+    }
+    return "\(formattedMDY(interval.start)) – \(formattedMDY(lastDay))"
 }
 
 // MARK: - Add Profile Sheet
